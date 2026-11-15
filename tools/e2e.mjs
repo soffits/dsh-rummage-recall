@@ -23,6 +23,7 @@ const home = join(root, 'home')
 const work = join(root, 'work')
 const modelLog = join(root, 'model.jsonl')
 const rummageLog = join(root, 'rummage.jsonl')
+const rummageState = join(root, 'rummage-state.json')
 mkdirSync(work, { recursive: true })
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
@@ -93,6 +94,7 @@ const env = {
   DSH_HOME: home,
   E2E_MODEL_KEY: 'none',
   FAKE_RUMMAGE_LOG: rummageLog,
+  FAKE_RUMMAGE_STATE: rummageState,
 }
 execFileSync('dsh', ['--profile', 'acp', '--dump-config'], { env, stdio: 'ignore' })
 const profile = join(home, 'profiles', 'acp')
@@ -269,6 +271,7 @@ try {
   expect(calls.length === 4, `one recall per person message, none for the brief or the child's report (got ${calls.length})`)
   expect(calls.every((c) => c.event.session_id === sessionId), 'every call carries the session id')
   expect(calls.every((c) => c.argv.join(' ') === 'recall --hook -s vault --max-items 4 --max-chars 1500'), 'the settings reach the command line')
+  expect(calls.every((c) => c.event.cwd === work && c.event.harness === 'dsh'), `every call carries the session cwd and the harness (${calls[0]?.event.cwd})`)
 
   const users = events.filter((e) => e.type === 'user/message')
   const order = events
@@ -280,7 +283,10 @@ try {
   expect(order[at('E2E two') + 1] === 'plugin:rummage-recall/outcome:no-match', 'no match leaves a record right after the second prompt')
   expect(order[at('E2E three') + 1] === 'plugin:rummage-recall/outcome:timeout', 'the timeout leaves a record right after the third prompt')
   expect(users.filter((e) => e.data.source.kind === 'rummage-recall').length === 2, 'leads for the first prompt and the subagent prompt, nothing else')
+  const firstLeads = users.find((e) => e.data.source.kind === 'rummage-recall')
+  expect(firstLeads?.data.source.rummage?.scope === 'work' && firstLeads.data.source.rummage.index?.state === 'building', 'the leads message keeps rummage\'s scope and index state')
   const record = events.find((e) => e.type === 'plugin:rummage-recall/outcome')
+  expect(record?.data.rummage?.index?.line === 'indexing 8/12 files', `a skip record keeps rummage's status too (${record?.data.rummage?.index?.line})`)
   expect(record?.ignorable === true, 'the record is ignorable')
 
   const requests = jsonl(modelLog).filter((l) => l.who === 'root')
@@ -288,7 +294,8 @@ try {
   const rows = sawLeads?.messages.filter((m) => m.role === 'user').map((m) => m.text) ?? []
   const leadAt = rows.findIndex((t) => t.includes('#aaaa111111'))
   expect(leadAt > 0 && rows[leadAt - 1].includes('E2E one'), 'the model got the leads as a user message right after the prompt')
-  expect(!requests.some((r) => r.messages.some((m) => m.text.includes('no-match') || m.text.includes('outcome'))), 'no record text reached the model')
+  // The timeout record's detail is text only the record holds.
+  expect(!requests.some((r) => r.messages.some((m) => m.text.includes('no answer within'))), 'no record text reached the model')
   expect(!JSON.stringify(requests.map((r) => r.messages.filter((m) => m.role === 'system'))).includes('#aaaa111111'), 'nothing went into the system prompt')
   expect(Boolean(childId), `a subagent ran (${childId})`)
   expect(!(logs.get(childId) ?? []).some((e) => e.type === 'user/message' && e.data.source.kind === 'rummage-recall'), 'the child got no leads')

@@ -91,7 +91,7 @@ test('a node sits in the process disclosure and carries the row data', async () 
   assert.equal(node.anchorSeq, 12)
   assert.equal(node.visibility, 'visible')
   assert.equal(node.groupTree, 'process')
-  assert.deepEqual(node.data, { seq: 12, time: 1, outcome: 'leads', leads: 3, durationMs: 180, text: leadEvent.data.content[0].text })
+  assert.deepEqual(node.data, { seq: 12, time: 1, outcome: 'leads', leads: 3, durationMs: 180, text: leadEvent.data.content[0].text, scope: '', paused: '', indexLine: '' })
   assert.equal(mod.definition.buildViewNode({ key: 'k', id: 'x', state: undefined }), null)
 })
 
@@ -135,13 +135,36 @@ test('apply registers the definition, the row view and both dictionaries', async
   const calls = { definitions: [], slots: [], dictionaries: [] }
   const ctx = {
     effect: (fn) => fn(),
-    locale: { register: (ns, lang, dict) => (calls.dictionaries.push([ns, lang, Object.keys(dict).length]), () => {}) },
+    locale: { register: (ns, lang, dict) => (calls.dictionaries.push([ns, lang, Object.keys(dict).length]), () => {}), bind: () => t },
     inject: (_deps, fn) => fn({ uiConversation: { events: { register: (d) => calls.definitions.push(d.kind) } } }),
-    slots: { inject: (_name, fn) => fn(), register: (options, view) => calls.slots.push([options.name, options.key, view.name]) },
+    slots: { inject: (_name, fn) => fn(), register: (options, view) => calls.slots.push([options.name, options.key ?? options.id, view.name]) },
   }
   mod.apply(ctx)
   assert.deepEqual(calls.definitions, [SOURCE_KIND])
-  assert.deepEqual(calls.slots, [['conversation.chat.node', SOURCE_KIND, 'RecallRow']])
+  assert.deepEqual(calls.slots.map((c) => c.slice(0, 2)), [['conversation.chat.node', SOURCE_KIND], ['conversation.input.dock', 'rummage-recall-memory']])
   assert.deepEqual(calls.dictionaries.map((d) => d.slice(0, 2)), [['rummage-recall', 'en'], ['rummage-recall', 'zh']])
   assert.deepEqual(Object.keys(mod.en).sort(), Object.keys(mod.zh).sort())
+})
+
+test('the row adds scope, pause and index progress from rummage', async () => {
+  const { mod } = await loadClient(fakeReact())
+  const rummage = { scope: 'my-project', index: { state: 'building', line: 'indexing 120/800 files' } }
+  const lead = { ...leadEvent, data: { ...leadEvent.data, source: { ...leadEvent.data.source, rummage } } }
+  assert.equal(mod.rowSummary(mod.readEvent(lead), t), 'my-project · 3 leads · 180 ms · indexing 120/800 files')
+  const paused = recordEvent({ reason: 'no-match', durationMs: 40, rummage: { paused: 'memory paused until 16:30' } })
+  assert.equal(mod.rowSummary(mod.readEvent(paused), t), 'no plausible match · 40 ms · memory paused until 16:30')
+})
+
+test('the badge shows only while rummage has something to say', async () => {
+  const { mod } = await loadClient(fakeReact())
+  assert.equal(mod.badgeView(null), null)
+  assert.equal(mod.badgeView({ index: { state: 'complete', line: '' } }), null)
+  assert.deepEqual(mod.badgeView({ index: { state: 'building', line: 'indexing 3/10', note: 'Memory of this project is still being built.' } }),
+    { text: 'indexing 3/10', warn: false, details: ['Memory of this project is still being built.'], busy: true })
+  assert.deepEqual(mod.badgeView({ paused: 'memory paused until 16:30', index: { state: 'complete', line: '' } }),
+    { text: 'memory paused until 16:30', warn: false, details: [], busy: true })
+  const failed = mod.badgeView({ index: { state: 'error', line: 'index failed', error: 'disk full' } })
+  assert.equal(failed.warn, true)
+  assert.deepEqual(failed.details, ['disk full'])
+  assert.equal(mod.badgeView({ paused: 'paused until 9', index: { state: 'paused', line: 'indexing paused' } }).text, 'paused until 9 · indexing paused')
 })

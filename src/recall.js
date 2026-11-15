@@ -16,6 +16,10 @@ export const SOURCE_KIND = 'rummage-recall'
 export const RECORD_TYPE = 'plugin:rummage-recall/outcome'
 /** Hook event name rummage's `--hook` mode speaks (Claude Code's and Codex's prompt hook). */
 export const HOOK_EVENT = 'UserPromptSubmit'
+/** Harness name sent in the hook input, so rummage knows whose sessions the project's chats are. */
+export const HARNESS = 'dsh'
+/** Most characters of rummage's reply metadata kept on a message or record. */
+export const MAX_META_CHARS = 2000
 /** Most message ids remembered, both for "already recalled" and for pending records. */
 export const MAX_REMEMBERED = 1024
 /** Most bytes read from the command's stdout or stderr. */
@@ -80,9 +84,32 @@ export function recallArgs(config) {
 }
 
 /**
+ * What rummage says about the recall besides the leads (`rummage` next to
+ * `hookSpecificOutput`): the scope it searched, a short status line such as
+ * index progress, and whatever detail it adds. Kept as JSON, size-capped.
+ * @param {unknown} value
+ * @returns {{ scope?: string, status?: string, [key: string]: unknown } | undefined}
+ */
+export function metaOf(value) {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) return undefined
+  let json
+  try {
+    json = JSON.stringify(value)
+  } catch {
+    return undefined
+  }
+  if (json === undefined || json === '{}') return undefined
+  if (json.length <= MAX_META_CHARS) return JSON.parse(json)
+  const short = {}
+  if (typeof value.scope === 'string') short.scope = value.scope.slice(0, 200)
+  if (typeof value.status === 'string') short.status = value.status.slice(0, 200)
+  return Object.keys(short).length > 0 ? short : undefined
+}
+
+/**
  * Read the hook's reply.
  * @param {string} stdout
- * @returns {{ kind: 'empty' } | { kind: 'context', text: string } | { kind: 'error', reason: string }}
+ * @returns {{ kind: 'empty', meta?: object } | { kind: 'context', text: string, meta?: object } | { kind: 'error', reason: string }}
  */
 export function parseReply(stdout) {
   const raw = stdout.trim()
@@ -93,9 +120,13 @@ export function parseReply(stdout) {
   } catch {
     return { kind: 'error', reason: `not JSON: ${raw.slice(0, 120)}` }
   }
-  const text = reply?.hookSpecificOutput?.additionalContext
+  const meta = metaOf(reply?.rummage)
+  const withMeta = meta === undefined ? {} : { meta }
+  const output = reply?.hookSpecificOutput
+  if (output === undefined && meta !== undefined) return { kind: 'empty', ...withMeta }
+  const text = output?.additionalContext
   if (typeof text !== 'string') return { kind: 'error', reason: 'no hookSpecificOutput.additionalContext in the reply' }
-  return text.trim() === '' ? { kind: 'empty' } : { kind: 'context', text: text.trim() }
+  return text.trim() === '' ? { kind: 'empty', ...withMeta } : { kind: 'context', text: text.trim(), ...withMeta }
 }
 
 /**
@@ -124,14 +155,14 @@ export function summaryOf(leads, durationMs) {
  * `signal` aborts.
  * @param {string} command
  * @param {string[]} args
- * @param {{ input: string, timeoutMs: number, signal?: AbortSignal }} options
+ * @param {{ input: string, timeoutMs: number, signal?: AbortSignal, cwd?: string }} options
  * @returns {Promise<{ stdout: string, stderr: string, code: number | null, timedOut: boolean, aborted: boolean, error?: Error }>}
  */
-export function runCommand(command, args, { input, timeoutMs, signal }) {
+export function runCommand(command, args, { input, timeoutMs, signal, cwd }) {
   return new Promise((resolve) => {
     let child
     try {
-      child = spawn(command, args, { stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true })
+      child = spawn(command, args, { stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true, ...(cwd === undefined ? {} : { cwd }) })
     } catch (error) {
       resolve({ stdout: '', stderr: '', code: null, timedOut: false, aborted: false, error })
       return
@@ -208,11 +239,13 @@ function bound(collection, limit) {
  * @param {(input: { content: object[], source: object }) => object} deps.createUserMessage - DSH's message factory.
  * @param {(session: object, type: string, data: object) => void} deps.appendRecord - DSH's appendPluginRecord.
  * @param {(line: string) => void} deps.warn - logger.
+ * @param {(agent: object) => string | undefined} [deps.cwdOf] - the session's current working directory.
+ * @param {(sessionId: string, cwd: string | undefined, meta: object) => void} [deps.onMeta] - rummage's status object from each reply.
  * @param {typeof runCommand} [deps.run]
  * @param {() => number} [deps.now] - milliseconds, for durations.
  * @param {(fn: () => void) => void} [deps.defer] - runs `fn` after the current session event is delivered.
  */
-export function createRecall({ config, createUserMessage, appendRecord, warn, run = runCommand, now = () => performance.now(), defer = setImmediate }) {
+export function createRecall({ config, createUserMessage, appendRecord, warn, cwdOf = () => undefined, onMeta = () => {}, run = runCommand, now = () => performance.now(), defer = setImmediate }) {
   /** Ids of person messages already handled, so a re-entered step does not recall twice. */
   const handled = new Set()
   /** Outcomes to record once the person's message is in the log: message id -> record data. */
@@ -222,13 +255,19 @@ export function createRecall({ config, createUserMessage, appendRecord, warn, ru
 
   /**
    * Recall for one prompt.
-   * @returns {Promise<{ kind: 'context', text: string, leads: number, durationMs: number }
-   *   | { kind: 'skipped', reason: 'no-match' | 'timeout' | 'error', durationMs: number, detail?: string }
+   * @returns {Promise<{ kind: 'context', text: string, leads: number, durationMs: number, meta?: object }
+   *   | { kind: 'skipped', reason: 'no-match' | 'timeout' | 'error', durationMs: number, detail?: string, meta?: object }
    *   | { kind: 'aborted' }>}
    */
-  async function recall(prompt, sessionId, signal) {
+  async function recall(prompt, sessionId, cwd, signal) {
     const settings = config()
-    const input = JSON.stringify({ hook_event_name: HOOK_EVENT, prompt, session_id: sessionId })
+    const input = JSON.stringify({
+      hook_event_name: HOOK_EVENT,
+      prompt,
+      session_id: sessionId,
+      ...(typeof cwd === 'string' && cwd !== '' ? { cwd } : {}),
+      harness: HARNESS,
+    })
     const started = now()
     const result = await run(settings.command, recallArgs(settings), { input, timeoutMs: settings.timeoutMs, signal })
     const durationMs = Math.max(0, now() - started)
@@ -248,8 +287,9 @@ export function createRecall({ config, createUserMessage, appendRecord, warn, ru
       return { kind: 'skipped', reason: failure.reason, durationMs, detail: failure.detail }
     }
     failing = false
-    if (reply.kind === 'empty') return { kind: 'skipped', reason: 'no-match', durationMs }
-    return { kind: 'context', text: reply.text, leads: countLeads(reply.text), durationMs }
+    const meta = reply.meta === undefined ? {} : { meta: reply.meta }
+    if (reply.kind === 'empty') return { kind: 'skipped', reason: 'no-match', durationMs, ...meta }
+    return { kind: 'context', text: reply.text, leads: countLeads(reply.text), durationMs, ...meta }
   }
 
   /** `agent/pre-step`: recall for the person's words in this step and add the leads after them. */
@@ -267,13 +307,21 @@ export function createRecall({ config, createUserMessage, appendRecord, warn, ru
     if (prompt === '') return decision
     const last = people.at(-1)
     const sessionId = String(payload?.agent?.id ?? payload?.agent?.session?.id ?? '')
-    const outcome = await recall(prompt, sessionId, payload?.signal)
+    let cwd
+    try {
+      cwd = cwdOf(payload?.agent)
+    } catch {
+      cwd = undefined
+    }
+    const outcome = await recall(prompt, sessionId, cwd, payload?.signal)
     if (outcome.kind === 'aborted') return decision
+    if (outcome.meta !== undefined) onMeta(sessionId, cwd, outcome.meta)
     if (outcome.kind === 'skipped') {
       pending.set(last.id, {
         reason: outcome.reason,
         durationMs: Math.round(outcome.durationMs),
         ...(outcome.detail === undefined ? {} : { detail: outcome.detail }),
+        ...(outcome.meta === undefined ? {} : { rummage: outcome.meta }),
         messageId: last.id,
         ...(typeof payload?.turn === 'number' ? { turn: payload.turn } : {}),
       })
@@ -288,6 +336,7 @@ export function createRecall({ config, createUserMessage, appendRecord, warn, ru
         summary: summaryOf(outcome.leads, outcome.durationMs),
         leads: outcome.leads,
         durationMs: Math.round(outcome.durationMs),
+        ...(outcome.meta === undefined ? {} : { rummage: outcome.meta }),
         messageId: last.id,
       },
     })
