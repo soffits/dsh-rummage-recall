@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "Rummage recall",
+    "description": "Before each message you write reaches the model, asks rummage for a few leads from your own files and chats and adds them after the message."
+  }
+}
