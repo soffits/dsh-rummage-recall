@@ -30,3 +30,7 @@ A DeepSeek Harness bundle: a host row on `agent/pre-step` that runs `rummage rec
 - Everything in the repo is English.
 - Ordinary implementation choices are yours: write the choice and a one-line reason in `docs/decisions.md`.
 - Commit on a branch; merge, tag and publish only when the task asks for it.
+
+## Git
+
+- PR titles are Conventional Commit subjects (`feat: ...`, `fix(scope): ...`), because a squash merge makes the title the commit on the default branch; CI checks it.
