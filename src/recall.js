@@ -85,25 +85,32 @@ export function recallArgs(config) {
 
 /**
  * What rummage says about the recall besides the leads (`rummage` next to
- * `hookSpecificOutput`): the scope it searched, a short status line such as
- * index progress, and whatever detail it adds. Kept as JSON, size-capped.
+ * `hookSpecificOutput`): the scope it searched, index progress, a pause, and
+ * whatever detail it adds. Kept as JSON, size-capped.
  * @param {unknown} value
  * @returns {{ scope?: string, status?: string, [key: string]: unknown } | undefined}
  */
 export function metaOf(value) {
   if (typeof value !== 'object' || value === null || Array.isArray(value)) return undefined
-  let json
-  try {
-    json = JSON.stringify(value)
-  } catch {
-    return undefined
+  const fits = (object) => {
+    try {
+      const json = JSON.stringify(object)
+      return json !== undefined && json.length <= MAX_META_CHARS
+    } catch {
+      return false
+    }
   }
-  if (json === undefined || json === '{}') return undefined
-  if (json.length <= MAX_META_CHARS) return JSON.parse(json)
+  if (Object.keys(value).length === 0) return undefined
+  if (fits(value)) return JSON.parse(JSON.stringify(value))
+  // Too big: keep what the row and badge show (scope, index, pause, status); drop the rest, project detail first.
   const short = {}
-  if (typeof value.scope === 'string') short.scope = value.scope.slice(0, 200)
-  if (typeof value.status === 'string') short.status = value.status.slice(0, 200)
-  return Object.keys(short).length > 0 ? short : undefined
+  for (const key of ['scope', 'index', 'paused', 'status']) if (value[key] !== undefined) short[key] = value[key]
+  if (fits(short)) return JSON.parse(JSON.stringify(short))
+  const name = typeof value.scope === 'string' ? value.scope : value.scope?.name
+  const tiny = {}
+  if (typeof name === 'string') tiny.scope = name.slice(0, 200)
+  if (typeof value.status === 'string') tiny.status = value.status.slice(0, 200)
+  return Object.keys(tiny).length > 0 ? tiny : undefined
 }
 
 /**

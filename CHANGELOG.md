@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.2.1
+
+- Work with rummage 0.16: the row shows the scope name and the badge shows a memory pause (rummage sends `scope` and `paused` as objects, which 0.2.0 ignored).
+- `/rummage-pause` and `/rummage-resume` use rummage's slash-command hook (`pause --hook`), so `recall 2h`, `here`, `private` and the rest are read by rummage; before, a duration made `rummage pause` fail with a usage error.
+- The badge asks `rummage status --line --json` without the unsupported `--session` option, so it works between messages, and does not repeat a pause already in rummage's status line.
+
 ## 0.2.0
 
 - The hook input carries the session's working directory (`cwd`) and `harness: "dsh"`, so rummage can pick the project scope.

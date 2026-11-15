@@ -28,11 +28,25 @@ export function indexOf(meta) {
   return typeof index === 'object' && index !== null && !Array.isArray(index) ? index : undefined
 }
 
-/** The pause line, from the object itself or its index. */
+/** A memory pause as one line: rummage sends `{what, until_local?, ...}` (a bare string from older versions). */
+function pauseLine(value) {
+  if (typeof value === 'string') return value
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) return ''
+  const what = typeof value.what === 'string' && value.what !== '' ? value.what : 'memory'
+  return typeof value.until_local === 'string' && value.until_local !== '' ? `${what} paused until ${value.until_local}` : `${what} paused`
+}
+
+/** The pause line: a memory pause on the object, on its index (`status --line --json`), else why indexing stopped. */
 export function pausedOf(meta) {
-  if (typeof meta?.paused === 'string' && meta.paused !== '') return meta.paused
-  const paused = indexOf(meta)?.paused
-  return typeof paused === 'string' && paused !== '' ? paused : ''
+  const index = indexOf(meta)
+  return pauseLine(meta?.paused) || pauseLine(index?.paused_memory) || pauseLine(index?.paused)
+}
+
+/** The scope's name, whether rummage sends the name or its scope object. */
+export function scopeOf(meta) {
+  const scope = meta?.scope
+  if (typeof scope === 'string') return scope
+  return typeof scope?.name === 'string' ? scope.name : ''
 }
 
 /** Whether rummage still has work to report: building, paused, stopped, failed, or memory paused. */
@@ -99,7 +113,7 @@ export function createStatus({ config, cwdOf, run = runCommand, stat = safeStat,
     const cwd = entry.cwd ?? cwdOf(sessionId)
     if (typeof cwd === 'string' && cwd !== '') entry.cwd = cwd
     entry.askedAt = now()
-    const result = await run(config().command, ['status', '--line', '--json', '--session', sessionId], {
+    const result = await run(config().command, ['status', '--line', '--json'], {
       input: '',
       timeoutMs,
       ...(entry.cwd === undefined ? {} : { cwd: entry.cwd }),
@@ -139,21 +153,33 @@ export function createStatus({ config, cwdOf, run = runCommand, stat = safeStat,
   }
 
   /**
-   * `/rummage-pause [what] [for]` and `/rummage-resume`: rummage's own verbs
-   * for this session, answered with its one-line result.
+   * `/rummage-pause [what] [for] [here|session|private]` and `/rummage-resume`:
+   * rummage's slash-command hook (`pause --hook`, `resume --hook`) reads the
+   * words, the directory and the session from stdin and answers with
+   * `{"decision": "block", "reason": "<one line>"}`.
    */
   async function command(verb, sessionId, rawInput) {
-    const words = String(rawInput ?? '').trim().split(/\s+/u).filter(Boolean)
     const entry = entryFor(sessionId)
     const cwd = entry.cwd ?? cwdOf(sessionId)
-    const result = await run(config().command, [verb, ...words, '--session', sessionId], {
-      input: '',
+    const input = JSON.stringify({
+      command_args: String(rawInput ?? '').trim(),
+      session_id: sessionId,
+      ...(typeof cwd === 'string' && cwd !== '' ? { cwd } : {}),
+    })
+    const result = await run(config().command, [verb, '--hook'], {
+      input,
       timeoutMs,
       ...(typeof cwd === 'string' && cwd !== '' ? { cwd } : {}),
     })
-    const line = (result.stdout.trim() || result.stderr.trim()).split('\n')[0] ?? ''
     // The next badge poll asks rummage again, so the pause shows at once.
     entry.askedAt = 0
+    let line = ''
+    try {
+      const reply = JSON.parse(result.stdout)
+      if (typeof reply?.reason === 'string') line = reply.reason.split('\n')[0]
+    } catch {
+      line = (result.stdout.trim() || result.stderr.trim()).split('\n')[0] ?? ''
+    }
     if (result.code === 0 && !result.timedOut && result.error === undefined) return { kind: 'success', text: line || `rummage ${verb}: done` }
     const why = result.timedOut ? 'no answer in time' : result.error !== undefined ? result.error.message : line || `exit ${result.code}`
     return { kind: 'error', text: `rummage ${verb}: ${why}` }
