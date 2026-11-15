@@ -42,7 +42,7 @@ if (argv[0] === 'pause' || argv[0] === 'resume') {
   const state = loadState()
   state.paused = argv[0] === 'pause' ? 'memory paused until 16:30' : ''
   saveState(state)
-  process.stdout.write(argv[0] === 'pause' ? `memory paused until 16:30 (${argv.slice(1).join(' ')})\n` : 'memory resumed\n')
+  process.stdout.write(`${JSON.stringify({ decision: 'block', reason: argv[0] === 'pause' ? 'rummage: recall paused until 16:30' : 'rummage: resumed (1 pause ended)' })}\n`)
   process.exit(0)
 }
 

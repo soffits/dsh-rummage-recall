@@ -275,3 +275,12 @@ test('metadata is size-capped to scope and status', () => {
   assert.deepEqual(metaOf({ scope: 's', status: 'x', blob: 'y'.repeat(5000) }), { scope: 's', status: 'x' })
   assert.deepEqual(parseReply('{"rummage":{"scope":"s"}}'), { kind: 'empty', meta: { scope: 's' } })
 })
+
+test('rummage 0.16 objects (scope, memory pause, project detail) are kept or trimmed to what is shown', () => {
+  const scope = { name: 'app', kind: 'project', folder: '/work/app', sources: [], folders: ['/work/app'], hidden_sources: [] }
+  const paused = { id: '4f2a91', what: 'recall', since: 1, until: 2, until_local: '2026-11-15 16:30', here: '/work/app' }
+  const index = { state: 'complete', line: '', paused: null }
+  assert.deepEqual(metaOf({ index, scope, paused }), { index, scope, paused })
+  const big = { index, scope, paused, project: { cwd: '/x'.repeat(2000) }, notice: 'n' }
+  assert.deepEqual(metaOf(big), { index, scope, paused })
+})

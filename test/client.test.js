@@ -168,3 +168,18 @@ test('the badge shows only while rummage has something to say', async () => {
   assert.deepEqual(failed.details, ['disk full'])
   assert.equal(mod.badgeView({ paused: 'paused until 9', index: { state: 'paused', line: 'indexing paused' } }).text, 'paused until 9 · indexing paused')
 })
+
+test('the row and badge read rummage 0.16 scope and pause objects', async () => {
+  const { mod } = await loadClient(fakeReact())
+  const rummage = { scope: { name: 'app', kind: 'project' }, paused: { what: 'recall', until_local: '16:30' }, index: { state: 'complete', line: '' } }
+  assert.equal(mod.readEvent(recordEvent({ reason: 'no-match', durationMs: 40, rummage })).scope, 'app')
+  assert.deepEqual(mod.badgeView(rummage), { text: 'recall paused until 16:30', warn: false, details: [], busy: true })
+})
+
+test('the badge does not repeat a pause that rummage status already put in its line', async () => {
+  const { mod } = await loadClient(fakeReact())
+  const status = { index: { state: 'complete', line: 'rummage: recall paused until 17:14', paused: null, paused_memory: { what: 'recall', until_local: '2026-11-15 17:14' } } }
+  assert.equal(mod.badgeView(status).text, 'rummage: recall paused until 17:14')
+  const quiet = { index: { state: 'complete', line: '', paused_memory: { what: 'all' } } }
+  assert.equal(mod.badgeView(quiet).text, 'all paused')
+})

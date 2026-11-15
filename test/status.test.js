@@ -9,9 +9,9 @@ function fixture({ initial = { index: { state: 'building', line: 'indexing 1/10'
   const calls = []
   let reply = initial
   const run = async (command, args, options) => {
-    calls.push({ command, args, cwd: options.cwd })
+    calls.push({ command, args, cwd: options.cwd, input: options.input })
     if (args[0] === 'status') return { stdout: JSON.stringify(reply), stderr: '', code: 0, timedOut: false, aborted: false }
-    if (args[0] === 'pause') return { stdout: 'memory paused until 16:30\n', stderr: '', code: 0, timedOut: false, aborted: false }
+    if (args[0] === 'pause') return { stdout: '{"decision": "block", "reason": "rummage: recall paused until 16:30"}\n', stderr: '', code: 0, timedOut: false, aborted: false }
     return { stdout: '', stderr: 'nope', code: 3, timedOut: false, aborted: false }
   }
   const status = createStatus({
@@ -45,7 +45,7 @@ test('a session with no recall yet asks rummage once, in its directory', async (
   const f = fixture()
   const meta = await f.status.read('s1')
   assert.equal(meta.index.state, 'building')
-  assert.deepEqual(f.calls, [{ command: 'rummage', args: ['status', '--line', '--json', '--session', 's1'], cwd: '/work/s1' }])
+  assert.deepEqual(f.calls, [{ command: 'rummage', args: ['status', '--line', '--json'], cwd: '/work/s1', input: '' }])
   await f.status.read('s1')
   assert.equal(f.calls.length, 1, 'answered from memory right after')
 })
@@ -88,8 +88,8 @@ test('pause and resume run rummage for this session and refresh the badge', asyn
   const f = fixture()
   f.status.remember('s1', '/repo', { index: { state: 'complete', line: '', file: '/idx/progress.json' } })
   const paused = await f.status.command('pause', 's1', ' recall 2h ')
-  assert.deepEqual(paused, { kind: 'success', text: 'memory paused until 16:30' })
-  assert.deepEqual(f.calls[0], { command: 'rummage', args: ['pause', 'recall', '2h', '--session', 's1'], cwd: '/repo' })
+  assert.deepEqual(paused, { kind: 'success', text: 'rummage: recall paused until 16:30' })
+  assert.deepEqual(f.calls[0], { command: 'rummage', args: ['pause', '--hook'], cwd: '/repo', input: JSON.stringify({ command_args: 'recall 2h', session_id: 's1', cwd: '/repo' }) })
   f.reply({ paused: 'memory paused until 16:30', index: { state: 'complete', line: '' } })
   const meta = await f.status.read('s1')
   assert.equal(f.calls.length, 2, 'the next read asks again')
@@ -107,4 +107,15 @@ test('the status route validates the session id and answers JSON', async () => {
   assert.equal(bad.status, 400)
   const junk = await route.fetch(new Request('http://x/api', { method: 'POST', body: '{' }))
   assert.equal(junk.status, 400)
+})
+
+test('rummage 0.16 pause and scope objects read as lines and names', async () => {
+  const { scopeOf } = await import('../src/status.js')
+  const paused = { what: 'recall', until_local: '2026-11-15 16:30' }
+  assert.equal(pausedOf({ paused }), 'recall paused until 2026-11-15 16:30')
+  assert.equal(pausedOf({ index: { state: 'complete', paused: null, paused_memory: { what: 'all' } } }), 'all paused')
+  assert.equal(pausedOf({ index: { state: 'complete', paused: null } }), '')
+  assert.equal(isBusy({ index: { state: 'complete' }, paused }), true)
+  assert.equal(scopeOf({ scope: { name: 'app', kind: 'project' } }), 'app')
+  assert.equal(scopeOf({ scope: 'old' }), 'old')
 })
