@@ -12,7 +12,7 @@ All the recall logic lives in `rummage recall --hook`, the same command Claude C
 - When recall is slow (`timeoutMs`), fails or finds nothing, the message goes on unchanged. A failure is logged once until recall works again.
 - In the Web UI each recall shows as a row among the turn's work rows: `rummage recall · my-project · 3 leads · 180 ms`, which expands to the exact text the model got, or `no plausible match` / `skipped: timeout` / `skipped: error`. When rummage reports index progress or a pause, the row adds it. The skipped rows come from a log-only record that no model ever sees.
 - A small "Memory" badge above the composer shows while rummage is still indexing the project, has paused memory, or hit an error, and disappears once the index is complete. It reads the status rummage returned with the last recall and, between messages, asks `rummage status --line --json` only when the index's progress file changed or the last answer is getting old.
-- `/rummage-pause [recall|index|all] [2h]` and `/rummage-resume` pause and resume memory for the session (they run `rummage pause|resume ... --session <id>` and show rummage's answer). Commands never reach the model.
+- `/rummage-pause [recall|index|all] [2h]` and `/rummage-resume` pause and resume memory (they run `rummage pause|resume --hook` with your words, the session and its folder, and show rummage's answer). Commands never reach the model.
 - Telegram and other chat bridges show nothing extra.
 
 ## Where the leads reach the model

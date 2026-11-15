@@ -75,15 +75,29 @@ window.__ModuleLoader__.load({
       return typeof index === 'object' && index !== null && !Array.isArray(index) ? index : null
     }
 
-    /** The pause line, from the object itself or its index. */
+    /** A memory pause as one line: rummage sends `{what, until_local?, ...}` (a bare string from older versions). */
+    function pauseLine(value) {
+      if (typeof value === 'string') return value
+      if (typeof value !== 'object' || value === null || Array.isArray(value)) return ''
+      const what = str(value.what) || 'memory'
+      return str(value.until_local) ? `${what} paused until ${value.until_local}` : `${what} paused`
+    }
+
+    /** The pause line: a memory pause on the object or its index, else why indexing stopped. */
     function pausedOf(meta) {
-      return str(meta?.paused) || str(indexOf(meta)?.paused)
+      const index = indexOf(meta)
+      return pauseLine(meta?.paused) || pauseLine(index?.paused_memory) || pauseLine(index?.paused)
+    }
+
+    /** The scope's name, whether rummage sends the name or its scope object. */
+    function scopeOf(meta) {
+      return typeof meta?.scope === 'string' ? meta.scope : str(meta?.scope?.name)
     }
 
     /** What the row and the badge show from rummage's status object. */
     function metaView(meta) {
       const index = indexOf(meta)
-      return { scope: str(meta?.scope), paused: pausedOf(meta), indexLine: str(index?.line) }
+      return { scope: scopeOf(meta), paused: pausedOf(meta), indexLine: str(index?.line) }
     }
 
     /**
@@ -227,7 +241,8 @@ window.__ModuleLoader__.load({
       const paused = pausedOf(meta)
       const busy = paused !== '' || (state !== '' && state !== 'complete')
       if (!busy) return null
-      const text = [paused, str(index?.line)].filter(Boolean).join(' · ') || state
+      // `status --line --json` already puts the memory pause first in `line`; a recall reply sends it apart.
+      const text = [pauseLine(meta?.paused), str(index?.line)].filter(Boolean).join(' · ') || paused || state
       const warn = state === 'paused' || state === 'stopped' || state === 'error'
       const details = [str(index?.note), str(index?.error)].filter(Boolean)
       return { text, warn, details, busy }
