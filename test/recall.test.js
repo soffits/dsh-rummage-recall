@@ -8,6 +8,7 @@ import {
   createRecall,
   isPersonMessage,
   isSubagent,
+  metaOf,
   parseReply,
   promptOf,
   recallArgs,
@@ -152,7 +153,7 @@ test('several person messages in one step get one recall over all their words', 
   const reply = JSON.stringify({ hookSpecificOutput: { additionalContext: '- #a · x' } })
   const { step } = harness({}, { run: async (_c, _a, { input }) => (seen.push(JSON.parse(input)), { stdout: reply, stderr: '', code: 0, timedOut: false, aborted: false }) })
   const decision = await step([web('a', 'first'), web('b', 'second')])
-  assert.deepEqual(seen, [{ hook_event_name: 'UserPromptSubmit', prompt: 'first\n\nsecond', session_id: 'session-abc' }])
+  assert.deepEqual(seen, [{ hook_event_name: 'UserPromptSubmit', prompt: 'first\n\nsecond', session_id: 'session-abc', harness: 'dsh' }])
   assert.deepEqual(decision.messages.map((m) => m.id.startsWith('notice-') ? 'N' : m.id), ['a', 'b', 'N'])
 })
 
@@ -230,4 +231,47 @@ test('runCommand passes stdin and reports exit codes', async () => {
   const bad = await runCommand(FAKE, [], { input: '{"prompt":"crash"}', timeoutMs: 5000 })
   assert.equal(bad.code, 2)
   assert.equal(bad.stderr.trim(), 'boom')
+})
+
+test('the hook input carries the session cwd and the harness; rummage metadata is kept even without leads', async () => {
+  const seen = []
+  const metas = []
+  const replies = [
+    { hookSpecificOutput: { additionalContext: '- #a · x' }, rummage: { scope: 'proj', index: { state: 'building', line: 'indexing 3/10', file: '/p' } } },
+    { rummage: { scope: 'proj', paused: 'memory paused until 16:30' } },
+    { hookSpecificOutput: { additionalContext: '' }, rummage: { scope: 'proj', index: { state: 'complete', line: '' } } },
+  ]
+  const { step, recall, records, deferred } = harness({}, {
+    cwdOf: (agent) => `/work/${agent.id}`,
+    onMeta: (...args) => metas.push(args),
+    run: async (_c, _a, { input }) => (seen.push(JSON.parse(input)), { stdout: JSON.stringify(replies[seen.length - 1]), stderr: '', code: 0, timedOut: false, aborted: false }),
+  })
+  const first = await step([web('m1', 'one')])
+  assert.equal(seen[0].cwd, '/work/session-abc')
+  assert.equal(seen[0].harness, 'dsh')
+  assert.deepEqual(first.messages[1].source.rummage, replies[0].rummage)
+  await step([web('m2', 'two')])
+  await step([web('m3', 'three')])
+  assert.deepEqual(metas.map((m) => m[0]), ['session-abc', 'session-abc', 'session-abc'])
+  assert.equal(metas[1][1], '/work/session-abc')
+  for (const id of ['m2', 'm3']) recall.onSessionEvent({}, { type: 'user/message', data: { id } })
+  deferred.splice(0).forEach((fn) => fn())
+  assert.deepEqual(records.map((r) => [r.data.reason, r.data.rummage]), [['no-match', replies[1].rummage], ['no-match', replies[2].rummage]])
+})
+
+test('a cwd lookup that throws or finds nothing leaves cwd out', async () => {
+  const seen = []
+  const run = async (_c, _a, { input }) => (seen.push(JSON.parse(input)), { stdout: '', stderr: '', code: 0, timedOut: false, aborted: false })
+  await harness({}, { run, cwdOf: () => { throw new Error('gone') } }).step([web('a', 'x')])
+  await harness({}, { run, cwdOf: () => undefined }).step([web('b', 'y')])
+  assert.deepEqual(seen.map((s) => 'cwd' in s), [false, false])
+})
+
+test('metadata is size-capped to scope and status', () => {
+  assert.equal(metaOf(null), undefined)
+  assert.equal(metaOf([]), undefined)
+  assert.equal(metaOf({}), undefined)
+  assert.deepEqual(metaOf({ scope: 's', index: { state: 'complete' } }), { scope: 's', index: { state: 'complete' } })
+  assert.deepEqual(metaOf({ scope: 's', status: 'x', blob: 'y'.repeat(5000) }), { scope: 's', status: 'x' })
+  assert.deepEqual(parseReply('{"rummage":{"scope":"s"}}'), { kind: 'empty', meta: { scope: 's' } })
 })

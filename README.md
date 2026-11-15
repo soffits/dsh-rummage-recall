@@ -7,15 +7,22 @@ All the recall logic lives in `rummage recall --hook`, the same command Claude C
 ## What it does
 
 - Recalls for messages a person wrote: prompts from the Web UI, chat bridges such as the Telegram bot, and ACP editors. Scheduled job prompts, a subagent's brief, messages between agents, tool results and plugin notices are left alone.
-- Runs `rummage recall --hook` with `{"prompt": ..., "session_id": ...}` on stdin. The session id lets rummage leave out the turns of the session you're in when it adds "said minutes ago in another session" items.
+- Runs `rummage recall --hook` with `{"prompt", "session_id", "cwd", "harness": "dsh"}` on stdin, the same shape Claude Code and Codex hooks send. The session id lets rummage leave out the turns of the session you're in; the session's current working directory picks the project scope.
 - Puts the reply in a user message (source kind `rummage-recall`) right after your message. Nothing goes into the system prompt, so prompt caching is unaffected.
 - When recall is slow (`timeoutMs`), fails or finds nothing, the message goes on unchanged. A failure is logged once until recall works again.
-- In the Web UI each recall shows as a row among the turn's work rows: `rummage recall · 3 leads · 180 ms`, which expands to the exact text the model got, or `no plausible match` / `skipped: timeout` / `skipped: error`. The skipped rows come from a log-only record that no model ever sees. Telegram and other bridges show nothing extra.
+- In the Web UI each recall shows as a row among the turn's work rows: `rummage recall · my-project · 3 leads · 180 ms`, which expands to the exact text the model got, or `no plausible match` / `skipped: timeout` / `skipped: error`. When rummage reports index progress or a pause, the row adds it. The skipped rows come from a log-only record that no model ever sees.
+- A small "Memory" badge above the composer shows while rummage is still indexing the project, has paused memory, or hit an error, and disappears once the index is complete. It reads the status rummage returned with the last recall and, between messages, asks `rummage status --line --json` only when the index's progress file changed or the last answer is getting old.
+- `/rummage-pause [recall|index|all] [2h]` and `/rummage-resume` pause and resume memory for the session (they run `rummage pause|resume ... --session <id>` and show rummage's answer). Commands never reach the model.
+- Telegram and other chat bridges show nothing extra.
 
 ## Where the leads reach the model
 
 - Native routes (OpenAI-compatible, Anthropic, DeepSeek...): a separate user message right after yours, in the same request.
 - `claude-code` via [dsh-oh-my-claude](https://github.com/lcestou/dsh-oh-my-claude): the plugin sends Claude Code every user message after its last reply as one prompt, so the leads arrive in the same user turn as your words. A message you send while Claude is mid-turn goes to it straight away, before DSH's step hook runs; its leads follow with the next prompt.
+
+## How it talks to rummage
+
+The hook reply is `{"hookSpecificOutput": {"additionalContext": "..."}, "rummage": {...}}`. The leads text goes to the model as is. The optional `rummage` object (scope, `index` with `state`, `line`, `note`, `error`, `file`, and `paused`) is only for display: it is kept on the leads message or the skip record and drives the row and the badge. An older rummage that ignores `cwd` and sends no `rummage` object still works; there's just no scope or badge.
 
 ## Requirements
 
