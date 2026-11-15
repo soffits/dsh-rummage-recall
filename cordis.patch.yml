@@ -1,0 +1,5 @@
+# Bundle layer for dsh-rummage-recall: one host row, no tools. Its settings are
+# the plugin's Config (see README.md).
+- insert:
+    - id: rummage-recall
+      name: '@soffits/dsh-rummage-recall'
