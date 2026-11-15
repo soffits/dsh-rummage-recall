@@ -64,7 +64,7 @@ test('a person message is a client prompt: rpcId or principal, kind user', () =>
 
 test('the prompt is the text blocks without a bridge sender line', () => {
   assert.equal(promptOf(web('a', '漏水传感器到了没有')), '漏水传感器到了没有')
-  assert.equal(promptOf({ content: text('[Telegram message from Lia (@x, user id 1)]\n你好呀 there') }), '你好呀 there')
+  assert.equal(promptOf({ content: text('[Telegram message from Alice (@x, user id 1)]\n你好呀 there') }), '你好呀 there')
   assert.equal(promptOf({ content: [{ type: 'image' }, { type: 'text', text: 'a' }, { type: 'text', text: 'b' }] }), 'a\nb')
   assert.equal(promptOf({ content: text('[not a sender line] keep') }), '[not a sender line] keep')
 })
@@ -91,7 +91,7 @@ test('leads are counted and summarised', () => {
 test('leads go right after the person message, with the session id and settings passed on', async () => {
   const { step } = harness({ sources: ['vault'], maxItems: 2 })
   const before = { id: 'notice', role: 'user', content: text('[sender]'), source: { kind: 'telegram-sender', form: 'notice', summary: 's' } }
-  const prompt = telegram('m1', '[Telegram message from Lia (@x, user id 1)]\nwhere is the leak sensor')
+  const prompt = telegram('m1', '[Telegram message from Alice (@x, user id 1)]\nwhere is the leak sensor')
   const after = { id: 'time', role: 'user', content: text('time'), source: { kind: 'time-context' } }
   const decision = await step([before, prompt, after])
   assert.equal(decision.kind, 'enter')
