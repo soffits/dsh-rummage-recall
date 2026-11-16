@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.2.2
+
+- A prompt another agent sent through a client (a session's brief, a scheduled job's prompt, an outside script) no longer counts as a person's message: the recorded sender (`source.principal`) decides, and its agent kinds are skipped. Sender lines in the text are no longer parsed; channels record the sender as metadata.
+
 ## 0.2.1
 
 - Work with rummage 0.16: the row shows the scope name and the badge shows a memory pause (rummage sends `scope` and `paused` as objects, which 0.2.0 ignored).
