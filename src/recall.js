@@ -26,12 +26,19 @@ export const MAX_REMEMBERED = 1024
 export const MAX_OUTPUT_BYTES = 256 * 1024
 
 /**
- * Whether a message is one a person wrote. A client prompting on someone's
- * behalf (the Web UI, a chat bridge) leaves a request id or a sender
- * principal on it. In a top-level session a plain `user` message is a person
- * too (an editor over ACP sends neither field); in a subagent's session the
- * same shape is the parent's brief. A scheduled job's prompt, another agent's
- * message, a tool result and every plugin notice have another source kind.
+ * Senders that are not people, in the metadata contract channel plugins
+ * share (dsh-message-context): another session, a scheduled job, an outside
+ * caller.
+ */
+const AGENT_PRINCIPALS = new Set(['dsh-session', 'cron-job', 'external'])
+
+/**
+ * Whether a message is one a person wrote. Its recorded sender
+ * (`source.principal`) decides when there is one. Without it, a client
+ * prompting on someone's behalf (the Web UI) leaves a request id; in a
+ * top-level session a plain `user` message is a person too (an editor over
+ * ACP sends neither field); in a subagent's session the same shape is the
+ * parent's brief. Tool results and plugin notices have another source kind.
  * @param {any} message - a user-role message entering a step.
  * @param {{ subagent?: boolean }} [where] - whether the session is a subagent's.
  * @returns {boolean}
@@ -39,8 +46,8 @@ export const MAX_OUTPUT_BYTES = 256 * 1024
 export function isPersonMessage(message, { subagent = false } = {}) {
   const source = message?.source
   if (message?.role !== 'user' || source?.kind !== 'user') return false
+  if (typeof source.principal === 'object' && source.principal !== null) return !AGENT_PRINCIPALS.has(source.principal.kind)
   if (typeof source.rpcId === 'string') return !source.rpcId.startsWith('telegram-claim:')
-  if (typeof source.principal === 'object' && source.principal !== null) return true
   return !subagent
 }
 
@@ -54,11 +61,9 @@ export function isSubagent(agent) {
   return (typeof header?.delegationDepth === 'number' && header.delegationDepth > 0) || typeof header?.parentSession === 'string'
 }
 
-/** A sender line some chat bridges put above the person's words. */
-const SENDER_LINE = /^\[[^\]\n]* message from [^\n]*\]\s*\n/u
-
 /**
- * The words of a person's message, without a bridge's sender line.
+ * The words of a person's message. Channels record the sender as metadata,
+ * so the text is only what the person wrote.
  * @param {any} message
  * @returns {string}
  */
@@ -68,7 +73,7 @@ export function promptOf(message) {
     .filter((block) => block?.type === 'text' && typeof block.text === 'string')
     .map((block) => block.text)
     .join('\n')
-  return text.replace(SENDER_LINE, '').trim()
+  return text.trim()
 }
 
 /**
