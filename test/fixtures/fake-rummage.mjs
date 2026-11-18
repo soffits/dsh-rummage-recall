@@ -72,7 +72,7 @@ process.stdin.on('end', async () => {
   if (prompt.includes('garbage')) return void process.stdout.write('not json\n')
   if (prompt.includes('nothing')) return meta === undefined ? undefined : reply(undefined)
   reply([
-    'Recalled from the user\'s own files by rummage; possibly related leads.',
+    'Cues from the user\'s own files, found by rummage; they say where to look, not what is true.',
     `- #aaaa111111 · vault · notes/a.md:1-4 · 2026-11-15 · "A" · prompt=${prompt}`,
     '  snippet',
     `- #bbbb222222 · dsh · dsh:${event.session_id}#3 · 2026-11-15 · "B" · args=${argv.join(' ')}`,
