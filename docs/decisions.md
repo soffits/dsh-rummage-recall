@@ -12,3 +12,4 @@
 - Project registration and indexing happen inside `rummage recall --hook` when it gets a cwd, not as a second command per message: one process start per message instead of two.
 - The badge polls the host (2 s while busy, 15 s otherwise, not in hidden tabs); the host refreshes lazily per request, so nothing runs while no page looks. A stream would add a long-lived channel for a value that changes every few seconds at most.
 - Pause and resume are human slash commands (DSH `commands` service): they never reach the model and work from any client that offers commands.
+- Pictures go to rummage as file paths from the attachment store (`attachments.imageHostPath`, DSH's own resolver), not as bytes or ids: rummage reads files, the store's layout stays DSH's business, and every other harness can send `images` the same way.

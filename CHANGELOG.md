@@ -1,5 +1,8 @@
 # Changelog
 
+## 0.3.0
+
+- The pictures sent with a message go to rummage as `images` (file paths in DSH's attachment store, up to four), so recall can search with them (rummage 0.30 adds items whose pictures look alike to the leads, without delaying the leads the words find). A message of only pictures is recalled for too; before, it had no words and was skipped. An older rummage ignores the field.
 ## 0.2.2
 
 - A prompt another agent sent through a client (a session's brief, a scheduled job's prompt, an outside script) no longer counts as a person's message: the recorded sender (`source.principal`) decides, and its agent kinds are skipped. Sender lines in the text are no longer parsed; channels record the sender as metadata.

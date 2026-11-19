@@ -76,6 +76,31 @@ export function promptOf(message) {
   return text.trim()
 }
 
+/** Most pictures of one message handed to rummage (it searches with the first two). */
+export const MAX_IMAGES = 4
+
+/**
+ * The picture files of a person's message: each stored image block's attachment, resolved to its path in the
+ * attachment store. A picture whose file can't be located is left out.
+ * @param {any} message
+ * @param {(ref: object) => string | undefined} imagePath - the attachment store's `imageHostPath`.
+ * @returns {string[]}
+ */
+export function imagesOf(message, imagePath) {
+  const content = Array.isArray(message?.content) ? message.content : []
+  const paths = []
+  for (const block of content) {
+    if (block?.type !== 'image' || typeof block.attachment !== 'object' || block.attachment === null) continue
+    try {
+      const path = imagePath(block.attachment)
+      if (typeof path === 'string' && path !== '') paths.push(path)
+    } catch {
+      // an invalid reference: no file to hand over
+    }
+  }
+  return paths
+}
+
 /**
  * The command line for one recall.
  * @param {{ sources: string[], maxItems: number, maxChars: number }} config
@@ -254,10 +279,11 @@ function bound(collection, limit) {
  * @param {(agent: object) => string | undefined} [deps.cwdOf] - the session's current working directory.
  * @param {(sessionId: string, cwd: string | undefined, meta: object) => void} [deps.onMeta] - rummage's status object from each reply.
  * @param {typeof runCommand} [deps.run]
+ * @param {(ref: object) => string | undefined} [deps.imagePath] - an image attachment's file in the attachment store.
  * @param {() => number} [deps.now] - milliseconds, for durations.
  * @param {(fn: () => void) => void} [deps.defer] - runs `fn` after the current session event is delivered.
  */
-export function createRecall({ config, createUserMessage, appendRecord, warn, cwdOf = () => undefined, onMeta = () => {}, run = runCommand, now = () => performance.now(), defer = setImmediate }) {
+export function createRecall({ config, createUserMessage, appendRecord, warn, cwdOf = () => undefined, onMeta = () => {}, imagePath = () => undefined, run = runCommand, now = () => performance.now(), defer = setImmediate }) {
   /** Ids of person messages already handled, so a re-entered step does not recall twice. */
   const handled = new Set()
   /** Outcomes to record once the person's message is in the log: message id -> record data. */
@@ -271,11 +297,12 @@ export function createRecall({ config, createUserMessage, appendRecord, warn, cw
    *   | { kind: 'skipped', reason: 'no-match' | 'timeout' | 'error', durationMs: number, detail?: string, meta?: object }
    *   | { kind: 'aborted' }>}
    */
-  async function recall(prompt, sessionId, cwd, signal) {
+  async function recall(prompt, images, sessionId, cwd, signal) {
     const settings = config()
     const input = JSON.stringify({
       hook_event_name: HOOK_EVENT,
       prompt,
+      ...(images.length > 0 ? { images } : {}),
       session_id: sessionId,
       ...(typeof cwd === 'string' && cwd !== '' ? { cwd } : {}),
       harness: HARNESS,
@@ -316,7 +343,8 @@ export function createRecall({ config, createUserMessage, appendRecord, warn, cw
     for (const message of people) handled.add(message.id)
     bound(handled, MAX_REMEMBERED)
     const prompt = people.map(promptOf).filter((text) => text !== '').join('\n\n')
-    if (prompt === '') return decision
+    const images = people.flatMap((message) => imagesOf(message, imagePath)).slice(0, MAX_IMAGES)
+    if (prompt === '' && images.length === 0) return decision
     const last = people.at(-1)
     const sessionId = String(payload?.agent?.id ?? payload?.agent?.session?.id ?? '')
     let cwd
@@ -325,7 +353,7 @@ export function createRecall({ config, createUserMessage, appendRecord, warn, cw
     } catch {
       cwd = undefined
     }
-    const outcome = await recall(prompt, sessionId, cwd, payload?.signal)
+    const outcome = await recall(prompt, images, sessionId, cwd, payload?.signal)
     if (outcome.kind === 'aborted') return decision
     if (outcome.meta !== undefined) onMeta(sessionId, cwd, outcome.meta)
     if (outcome.kind === 'skipped') {
