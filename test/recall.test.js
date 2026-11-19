@@ -6,6 +6,7 @@ import {
   SOURCE_KIND,
   countLeads,
   createRecall,
+  imagesOf,
   isPersonMessage,
   isSubagent,
   metaOf,
@@ -286,4 +287,30 @@ test('rummage 0.16 objects (scope, memory pause, project detail) are kept or tri
   assert.deepEqual(metaOf({ index, scope, paused }), { index, scope, paused })
   const big = { index, scope, paused, project: { cwd: '/x'.repeat(2000) }, notice: 'n' }
   assert.deepEqual(metaOf(big), { index, scope, paused })
+})
+
+const picture = (name) => ({ type: 'image', attachment: { attachmentId: `sha256:${name.repeat(64).slice(0, 64)}`, mediaType: 'image/png', name: 'shot.png', bytes: 10 } })
+const where = (ref) => `/store/objects/${ref.attachmentId.slice(7, 9)}/${ref.attachmentId.slice(7)}`
+
+test('the pictures of a message are the files of its stored image blocks', () => {
+  const message = { content: [picture('a'), { type: 'text', text: 'x' }, picture('b'), { type: 'image', attachment: null }, { type: 'image' }] }
+  assert.deepEqual(imagesOf(message, where), [where(picture('a').attachment), where(picture('b').attachment)])
+  assert.deepEqual(imagesOf(message, () => undefined), [], 'no file in the store, nothing to hand over')
+  assert.deepEqual(imagesOf(message, () => { throw new Error('bad reference') }), [])
+  assert.deepEqual(imagesOf({ content: text('only words') }, where), [])
+})
+
+test('the pictures of the prompt go to rummage with its words, and a message of only a picture is recalled for', async () => {
+  const { step } = harness({}, { imagePath: where })
+  const withWords = { ...web('m1', 'what is this flight chart'), content: [picture('a'), ...text('what is this flight chart')] }
+  const block = (await step([withWords])).messages[1].content[0].text
+  assert.match(block, new RegExp(`prompt=what is this flight chart images=${where(picture('a').attachment)}`))
+  const only = { ...web('m2', ''), content: [picture('b')] }
+  const decision = await step([only])
+  assert.equal(decision.messages.length, 2, 'the picture alone is worth a recall')
+  assert.match(decision.messages[1].content[0].text, /prompt= images=/)
+  const none = await step([web('m3', 'where is the leak sensor')])
+  assert.doesNotMatch(none.messages[1].content[0].text, /images=/)
+  const noFile = { ...web('m4', ''), content: [picture('c')] }
+  assert.equal((await harness({}, { imagePath: () => undefined }).step([noFile])).messages.length, 1, 'a picture with no file and no words adds nothing')
 })
