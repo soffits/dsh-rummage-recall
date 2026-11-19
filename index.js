@@ -40,6 +40,7 @@ export function apply(ctx, config) {
     warn: (line) => ctx.logger.warn(line),
     cwdOf: (agent) => cwdOfSession(agent?.session),
     onMeta: status.remember,
+    imagePath: (ref) => ctx.get('attachments')?.imageHostPath(ref),
   })
   ctx.on('agent/pre-step', (payload, next) => recall.preStep(payload, next))
   ctx.on('session/event', (session, event) => recall.onSessionEvent(session, event))

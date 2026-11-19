@@ -73,7 +73,7 @@ process.stdin.on('end', async () => {
   if (prompt.includes('nothing')) return meta === undefined ? undefined : reply(undefined)
   reply([
     'Cues from the user\'s own files, found by rummage; they say where to look, not what is true.',
-    `- #aaaa111111 · vault · notes/a.md:1-4 · 2026-11-15 · "A" · prompt=${prompt}`,
+    `- #aaaa111111 · vault · notes/a.md:1-4 · 2026-11-15 · "A" · prompt=${prompt}${event.images ? ` images=${event.images.join(',')}` : ''}`,
     '  snippet',
     `- #bbbb222222 · dsh · dsh:${event.session_id}#3 · 2026-11-15 · "B" · args=${argv.join(' ')}`,
   ].join('\n'))
