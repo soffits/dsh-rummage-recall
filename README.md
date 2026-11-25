@@ -31,7 +31,35 @@ The hook reply is `{"hookSpecificOutput": {"additionalContext": "..."}, "rummage
 
 ## Install
 
-From the Plugin Manager, install the bundle `@soffits/dsh-rummage-recall`. It adds no tools, so it loads into a running DSH without a restart. Reload the Web UI page to get the recall rows.
+```sh
+dsh plugin --profile web add @soffits/dsh-rummage-recall
+```
+
+or install the bundle `@soffits/dsh-rummage-recall` from the Plugin Manager. It adds no tools, so it loads into a running DSH without a restart. Reload the Web UI page to get the recall rows.
+
+The plugin only runs `rummage`, so rummage has to work on its own first, on the machine DSH runs on:
+
+```sh
+uv tool install 'git+https://github.com/soffits/rummage'
+rummage setup        # downloads the embedding model, about 330 MB
+```
+
+Give it something to remember in `~/.config/rummage/config.toml` (here a folder of Markdown notes; the other source types are in [rummage's README](https://github.com/soffits/rummage#configure)), index it, and call the hook the way the plugin does:
+
+```toml
+[sources.notes]
+type = "markdown"
+root = "~/notes"
+```
+
+```sh
+rummage index
+echo '{"prompt": "what did the lease say about my cat?", "session_id": "try", "cwd": "/home/me", "harness": "dsh"}' | rummage recall --hook
+```
+
+A lead comes back as `hookSpecificOutput.additionalContext` in the JSON. If that prints, the plugin has what it needs. The first hook call also makes rummage start remembering DSH's own chat history (its reply says so); `rummage pause` stops that, and `rummage sources` shows what it reads. A message with no matching lead goes on unchanged and the recall row says `no plausible match`.
+
+`rummage` must be on the `PATH` of the DSH process. `uv tool install` puts it in `~/.local/bin`, which a DSH started as a service or from a desktop launcher may not have; then set `command` to the full path. When recall fails, the row says `skipped: error` and the DSH log has one line with the reason (`rummage-recall: recall failed (error): ...`), repeated only after it worked in between.
 
 ## Settings
 
