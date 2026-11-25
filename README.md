@@ -1,5 +1,3 @@
-> **Moved.** This plugin is now part of [@soffits/dsh-companion-runtime](https://github.com/soffits/dsh-companion-runtime) (`rummage-recall/`). This repository is archived.
-
 # dsh-rummage-recall
 
 Automatic recall for [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness). Before a message you wrote reaches the model, the plugin asks [rummage](https://github.com/soffits/rummage) for a few leads from your own notes, mail and chats, and adds them right after your message. The model gets pointers it can follow (`rummage get <#id>`), not answers.
